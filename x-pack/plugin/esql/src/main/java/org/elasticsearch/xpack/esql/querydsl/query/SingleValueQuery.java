@@ -165,7 +165,7 @@ public class SingleValueQuery extends Query {
 
         @Override
         public TransportVersion getMinimalSupportedVersion() {
-            return TransportVersion.V_8_500_065; // This is 8.11 - the first version of ESQL
+            return TransportVersion.V_8_500_066; // This is 8.11 - the first version of ESQL
         }
 
         @Override

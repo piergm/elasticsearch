@@ -172,7 +172,7 @@ public class SearchResponseTests extends ESTestCase {
             int totalClusters = 1;
             int successfulClusters = randomIntBetween(0, totalClusters);
             int skippedClusters = totalClusters - successfulClusters;
-            return new SearchResponse.Clusters(totalClusters, successfulClusters, skippedClusters);
+            return new SearchResponse.Clusters(totalClusters, 0, successfulClusters, 0, skippedClusters, 0);
         }
     }
 
@@ -414,7 +414,7 @@ public class SearchResponseTests extends ESTestCase {
                 0,
                 0,
                 ShardSearchFailure.EMPTY_ARRAY,
-                new SearchResponse.Clusters(5, 3, 2)
+                new SearchResponse.Clusters(5, 3, 2, 0, 0, 0)
             );
             String expectedString = XContentHelper.stripWhitespace("""
                 {
@@ -429,7 +429,10 @@ public class SearchResponseTests extends ESTestCase {
                   "_clusters": {
                     "total": 5,
                     "successful": 3,
-                    "skipped": 2
+                    "skipped": 2,
+                    "running":0,
+                    "partial": 0,
+                    "failed": 0
                   },
                   "hits": {
                     "total": {
@@ -482,8 +485,11 @@ public class SearchResponseTests extends ESTestCase {
                   },
                   "_clusters": {
                     "total": 4,
-                    "successful": 2,
-                    "skipped": 2,
+                    "successful": 1,
+                    "skipped": 1,
+                    "running":0,
+                    "partial": 1,
+                    "failed": 1,
                     "details": {
                       "(local)": {
                         "status": "successful",

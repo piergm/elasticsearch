@@ -404,7 +404,7 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
                                 clusterNodeLookup,
                                 clusterState,
                                 remoteAliasFilters,
-                                new SearchResponse.Clusters(totalClusters, successfulClusters, skippedClusters.get()),
+                                new SearchResponse.Clusters(totalClusters, successfulClusters, 0, 0, 0, 0),
                                 searchContext,
                                 searchPhaseProvider.apply(finalDelegate)
                             );

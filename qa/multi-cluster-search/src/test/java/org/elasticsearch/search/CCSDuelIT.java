@@ -1072,8 +1072,14 @@ public class CCSDuelIT extends ESRestTestCase {
             SearchResponse.Clusters clustersMRTFalse = fanOutSearchResponse.getClusters();
 
             assertEquals(clustersMRT.getTotal(), clustersMRTFalse.getTotal());
-            assertEquals(clustersMRT.getSuccessful(), clustersMRTFalse.getSuccessful());
-            assertEquals(clustersMRT.getSkipped(), clustersMRTFalse.getSkipped());
+            assertEquals(
+                clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL),
+                clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL)
+            );
+            assertEquals(
+                clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED),
+                clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED)
+            );
 
             boolean removeSkipped = searchRequest.source().collapse() != null;
             Map<String, Object> minimizeRoundtripsResponseMap = responseToMap(minimizeRoundtripsSearchResponse);
@@ -1145,8 +1151,14 @@ public class CCSDuelIT extends ESRestTestCase {
         SearchResponse.Clusters clustersMRTFalse = fanOutSearchResponse.getClusters();
 
         assertEquals(clustersMRT.getTotal(), clustersMRTFalse.getTotal());
-        assertEquals(clustersMRT.getSuccessful(), clustersMRTFalse.getSuccessful());
-        assertEquals(clustersMRT.getSkipped(), clustersMRTFalse.getSkipped());
+        assertEquals(
+            clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL),
+            clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL)
+        );
+        assertEquals(
+            clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED),
+            clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED)
+        );
 
         boolean removeSkipped = searchRequest.source().collapse() != null;
         Map<String, Object> minimizeRoundtripsResponseMap = responseToMap(minimizeRoundtripsSearchResponse);
@@ -1231,14 +1243,14 @@ public class CCSDuelIT extends ESRestTestCase {
 
     private static void assertMultiClusterSearchResponse(SearchResponse searchResponse) {
         assertEquals(2, searchResponse.getClusters().getTotal());
-        assertEquals(2, searchResponse.getClusters().getSuccessful());
+        assertEquals(2, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
         assertThat(searchResponse.getTotalShards(), greaterThan(1));
         assertThat(searchResponse.getSuccessfulShards(), greaterThan(1));
     }
 
     private static void assertSingleRemoteClusterSearchResponse(SearchResponse searchResponse) {
         assertEquals(1, searchResponse.getClusters().getTotal());
-        assertEquals(1, searchResponse.getClusters().getSuccessful());
+        assertEquals(1, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
         assertThat(searchResponse.getTotalShards(), greaterThanOrEqualTo(1));
         assertThat(searchResponse.getSuccessfulShards(), greaterThanOrEqualTo(1));
     }
