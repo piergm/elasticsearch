@@ -1093,7 +1093,6 @@ public class CCSDuelIT extends ESRestTestCase {
                 clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.FAILED)
             );
 
-            boolean removeSkipped = searchRequest.source().collapse() != null;
             Map<String, Object> minimizeRoundtripsResponseMap = responseToMap(minimizeRoundtripsSearchResponse);
             if (clustersMRT.hasClusterObjects() && clustersMRTFalse.hasClusterObjects()) {
                 Map<String, Object> fanOutResponseMap = responseToMap(fanOutSearchResponse);
@@ -1184,7 +1183,6 @@ public class CCSDuelIT extends ESRestTestCase {
             clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.FAILED)
         );
 
-        boolean removeSkipped = searchRequest.source().collapse() != null;
         Map<String, Object> minimizeRoundtripsResponseMap = responseToMap(minimizeRoundtripsSearchResponse);
         if (clustersMRT.hasClusterObjects() && clustersMRTFalse.hasClusterObjects()) {
             Map<String, Object> fanOutResponseMap = responseToMap(fanOutSearchResponse);

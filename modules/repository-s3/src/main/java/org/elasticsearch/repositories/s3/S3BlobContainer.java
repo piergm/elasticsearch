@@ -13,26 +13,22 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.ListMultipartUploadsRequest;
 import com.amazonaws.services.s3.model.ListNextBatchOfObjectsRequest;
 import com.amazonaws.services.s3.model.ListObjectsRequest;
-import com.amazonaws.services.s3.model.MultiObjectDeleteException;
 import com.amazonaws.services.s3.model.MultipartUpload;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.PutObjectRequest;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.model.UploadPartRequest;
 import com.amazonaws.services.s3.model.UploadPartResult;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.util.SetOnce;
-import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRunnable;
 import org.elasticsearch.action.support.RefCountingListener;
@@ -63,19 +59,16 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.elasticsearch.common.blobstore.support.BlobContainerUtils.getRegisterUsingConsistentRead;
-import static org.elasticsearch.core.Strings.format;
 import static org.elasticsearch.repositories.s3.S3Repository.MAX_FILE_SIZE;
 import static org.elasticsearch.repositories.s3.S3Repository.MAX_FILE_SIZE_USING_MULTIPART;
 import static org.elasticsearch.repositories.s3.S3Repository.MIN_PART_SIZE_USING_MULTIPART;
@@ -83,12 +76,6 @@ import static org.elasticsearch.repositories.s3.S3Repository.MIN_PART_SIZE_USING
 class S3BlobContainer extends AbstractBlobContainer {
 
     private static final Logger logger = LogManager.getLogger(S3BlobContainer.class);
-
-    /**
-     * Maximum number of deletes in a {@link DeleteObjectsRequest}.
-     * @see <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/multiobjectdeleteapi.html">S3 Documentation</a>.
-     */
-    private static final int MAX_BULK_DELETES = 1000;
 
     private final S3BlobStore blobStore;
     private final String keyPath;
@@ -283,14 +270,13 @@ class S3BlobContainer extends AbstractBlobContainer {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public DeleteResult delete() throws IOException {
         final AtomicLong deletedBlobs = new AtomicLong();
         final AtomicLong deletedBytes = new AtomicLong();
         try (AmazonS3Reference clientReference = blobStore.clientReference()) {
             ObjectListing prevListing = null;
             while (true) {
-                ObjectListing list;
+                final ObjectListing list;
                 if (prevListing != null) {
                     final var listNextBatchOfObjectsRequest = new ListNextBatchOfObjectsRequest(prevListing);
                     listNextBatchOfObjectsRequest.setRequestMetricCollector(blobStore.listMetricCollector);
@@ -302,26 +288,16 @@ class S3BlobContainer extends AbstractBlobContainer {
                     listObjectsRequest.setRequestMetricCollector(blobStore.listMetricCollector);
                     list = SocketAccess.doPrivileged(() -> clientReference.client().listObjects(listObjectsRequest));
                 }
-                final Iterator<S3ObjectSummary> objectSummaryIterator = list.getObjectSummaries().iterator();
-                final Iterator<String> blobNameIterator = new Iterator<>() {
-                    @Override
-                    public boolean hasNext() {
-                        return objectSummaryIterator.hasNext();
-                    }
-
-                    @Override
-                    public String next() {
-                        final S3ObjectSummary summary = objectSummaryIterator.next();
-                        deletedBlobs.incrementAndGet();
-                        deletedBytes.addAndGet(summary.getSize());
-                        return summary.getKey();
-                    }
-                };
+                final Iterator<String> blobNameIterator = Iterators.map(list.getObjectSummaries().iterator(), summary -> {
+                    deletedBlobs.incrementAndGet();
+                    deletedBytes.addAndGet(summary.getSize());
+                    return summary.getKey();
+                });
                 if (list.isTruncated()) {
-                    doDeleteBlobs(blobNameIterator, false);
+                    blobStore.deleteBlobsIgnoringIfNotExists(blobNameIterator);
                     prevListing = list;
                 } else {
-                    doDeleteBlobs(Iterators.concat(blobNameIterator, Collections.singletonList(keyPath).iterator()), false);
+                    blobStore.deleteBlobsIgnoringIfNotExists(Iterators.concat(blobNameIterator, Iterators.single(keyPath)));
                     break;
                 }
             }
@@ -333,79 +309,7 @@ class S3BlobContainer extends AbstractBlobContainer {
 
     @Override
     public void deleteBlobsIgnoringIfNotExists(Iterator<String> blobNames) throws IOException {
-        doDeleteBlobs(blobNames, true);
-    }
-
-    private void doDeleteBlobs(Iterator<String> blobNames, boolean relative) throws IOException {
-        if (blobNames.hasNext() == false) {
-            return;
-        }
-        final Iterator<String> outstanding;
-        if (relative) {
-            outstanding = new Iterator<>() {
-                @Override
-                public boolean hasNext() {
-                    return blobNames.hasNext();
-                }
-
-                @Override
-                public String next() {
-                    return buildKey(blobNames.next());
-                }
-            };
-        } else {
-            outstanding = blobNames;
-        }
-
-        final List<String> partition = new ArrayList<>();
-        try (AmazonS3Reference clientReference = blobStore.clientReference()) {
-            // S3 API only allows 1k blobs per delete so we split up the given blobs into requests of max. 1k deletes
-            final AtomicReference<Exception> aex = new AtomicReference<>();
-            SocketAccess.doPrivilegedVoid(() -> {
-                outstanding.forEachRemaining(key -> {
-                    partition.add(key);
-                    if (partition.size() == MAX_BULK_DELETES) {
-                        deletePartition(clientReference, partition, aex);
-                        partition.clear();
-                    }
-                });
-                if (partition.isEmpty() == false) {
-                    deletePartition(clientReference, partition, aex);
-                }
-            });
-            if (aex.get() != null) {
-                throw aex.get();
-            }
-        } catch (Exception e) {
-            throw new IOException("Failed to delete blobs " + partition.stream().limit(10).toList(), e);
-        }
-    }
-
-    private void deletePartition(AmazonS3Reference clientReference, List<String> partition, AtomicReference<Exception> aex) {
-        try {
-            clientReference.client().deleteObjects(bulkDelete(blobStore, partition));
-        } catch (MultiObjectDeleteException e) {
-            // We are sending quiet mode requests so we can't use the deleted keys entry on the exception and instead
-            // first remove all keys that were sent in the request and then add back those that ran into an exception.
-            logger.warn(
-                () -> format(
-                    "Failed to delete some blobs %s",
-                    e.getErrors().stream().map(err -> "[" + err.getKey() + "][" + err.getCode() + "][" + err.getMessage() + "]").toList()
-                ),
-                e
-            );
-            aex.set(ExceptionsHelper.useOrSuppress(aex.get(), e));
-        } catch (AmazonClientException e) {
-            // The AWS client threw any unexpected exception and did not execute the request at all so we do not
-            // remove any keys from the outstanding deletes set.
-            aex.set(ExceptionsHelper.useOrSuppress(aex.get(), e));
-        }
-    }
-
-    private static DeleteObjectsRequest bulkDelete(S3BlobStore blobStore, List<String> blobs) {
-        return new DeleteObjectsRequest(blobStore.bucket()).withKeys(blobs.toArray(Strings.EMPTY_ARRAY))
-            .withQuiet(true)
-            .withRequestMetricCollector(blobStore.deleteMetricCollector);
+        blobStore.deleteBlobsIgnoringIfNotExists(Iterators.map(blobNames, this::buildKey));
     }
 
     @Override
@@ -808,7 +712,7 @@ class S3BlobContainer extends AbstractBlobContainer {
                             for (MultipartUpload currentUpload : currentUploads) {
                                 final var currentUploadId = currentUpload.getUploadId();
                                 if (uploadId.equals(currentUploadId) == false) {
-                                    threadPool.executor(ThreadPool.Names.SNAPSHOT)
+                                    blobStore.getSnapshotExecutor()
                                         .execute(ActionRunnable.run(listeners.acquire(), () -> safeAbortMultipartUpload(currentUploadId)));
                                 }
                             }
@@ -820,7 +724,7 @@ class S3BlobContainer extends AbstractBlobContainer {
                     if (uploadIndex > 0) {
                         threadPool.scheduleUnlessShuttingDown(
                             TimeValue.timeValueMillis(TimeValue.timeValueSeconds(uploadIndex).millis() + Randomness.get().nextInt(50)),
-                            ThreadPool.Names.SNAPSHOT,
+                            blobStore.getSnapshotExecutor(),
                             cancelConcurrentUpdates
                         );
                     } else {
