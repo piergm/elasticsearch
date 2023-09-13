@@ -1080,6 +1080,18 @@ public class CCSDuelIT extends ESRestTestCase {
                 clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED),
                 clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED)
             );
+            assertEquals(
+                clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.RUNNING),
+                clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.RUNNING)
+            );
+            assertEquals(
+                clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL),
+                clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL)
+            );
+            assertEquals(
+                clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.FAILED),
+                clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.FAILED)
+            );
 
             boolean removeSkipped = searchRequest.source().collapse() != null;
             Map<String, Object> minimizeRoundtripsResponseMap = responseToMap(minimizeRoundtripsSearchResponse);
@@ -1158,6 +1170,18 @@ public class CCSDuelIT extends ESRestTestCase {
         assertEquals(
             clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED),
             clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED)
+        );
+        assertEquals(
+            clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.RUNNING),
+            clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.RUNNING)
+        );
+        assertEquals(
+            clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL),
+            clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL)
+        );
+        assertEquals(
+            clustersMRT.getClusterStateCount(SearchResponse.Cluster.Status.FAILED),
+            clustersMRTFalse.getClusterStateCount(SearchResponse.Cluster.Status.FAILED)
         );
 
         boolean removeSkipped = searchRequest.source().collapse() != null;

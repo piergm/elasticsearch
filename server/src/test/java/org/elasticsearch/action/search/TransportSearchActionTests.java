@@ -618,6 +618,9 @@ public class TransportSearchActionTests extends ESTestCase {
 
                 SearchResponse searchResponse = response.get();
                 assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(totalClusters, searchResponse.getClusters().getTotal());
                 assertEquals(totalClusters, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
                 assertEquals(totalClusters == 1 ? 1 : totalClusters + 1, searchResponse.getNumReducePhases());
@@ -774,6 +777,9 @@ public class TransportSearchActionTests extends ESTestCase {
                 assertEquals(totalClusters, searchResponse.getClusters().getTotal());
                 int successful = totalClusters - disconnectedNodesIndices.size();
                 assertEquals(successful, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(successful == 0 ? 0 : successful + 1, searchResponse.getNumReducePhases());
             }
 
@@ -833,6 +839,9 @@ public class TransportSearchActionTests extends ESTestCase {
                 assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED));
                 assertEquals(totalClusters, searchResponse.getClusters().getTotal());
                 assertEquals(totalClusters, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, searchResponse.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(totalClusters == 1 ? 1 : totalClusters + 1, searchResponse.getNumReducePhases());
             });
             assertEquals(0, service.getConnectionManager().size());

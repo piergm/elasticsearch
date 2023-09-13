@@ -186,6 +186,9 @@ public class CrossClusterSearchUnavailableClusterIT extends ESRestTestCase {
                 assertEquals(2, response.getClusters().getTotal());
                 assertEquals(2, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
                 assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(10, response.getHits().getTotalHits().value);
                 assertEquals(10, response.getHits().getHits().length);
             }
@@ -194,6 +197,9 @@ public class CrossClusterSearchUnavailableClusterIT extends ESRestTestCase {
                 assertEquals(1, response.getClusters().getTotal());
                 assertEquals(1, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
                 assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(0, response.getHits().getTotalHits().value);
             }
 
@@ -205,6 +211,9 @@ public class CrossClusterSearchUnavailableClusterIT extends ESRestTestCase {
                 assertEquals(2, response.getClusters().getTotal());
                 assertEquals(2, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
                 assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(10, response.getHits().getTotalHits().value);
                 assertEquals(10, response.getHits().getHits().length);
                 String scrollId = response.getScrollId();
@@ -223,6 +232,9 @@ public class CrossClusterSearchUnavailableClusterIT extends ESRestTestCase {
                 assertEquals(2, response.getClusters().getTotal());
                 assertEquals(1, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
                 assertEquals(1, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(10, response.getHits().getTotalHits().value);
                 assertEquals(10, response.getHits().getHits().length);
             }
@@ -231,6 +243,9 @@ public class CrossClusterSearchUnavailableClusterIT extends ESRestTestCase {
                 assertEquals(1, response.getClusters().getTotal());
                 assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
                 assertEquals(1, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(0, response.getHits().getTotalHits().value);
             }
 
@@ -242,6 +257,9 @@ public class CrossClusterSearchUnavailableClusterIT extends ESRestTestCase {
                 assertEquals(2, response.getClusters().getTotal());
                 assertEquals(1, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SUCCESSFUL));
                 assertEquals(1, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.SKIPPED));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.RUNNING));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.PARTIAL));
+                assertEquals(0, response.getClusters().getClusterStateCount(SearchResponse.Cluster.Status.FAILED));
                 assertEquals(10, response.getHits().getTotalHits().value);
                 assertEquals(10, response.getHits().getHits().length);
                 String scrollId = response.getScrollId();
