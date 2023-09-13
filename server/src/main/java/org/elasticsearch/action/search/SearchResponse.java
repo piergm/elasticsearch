@@ -577,7 +577,7 @@ public class SearchResponse extends ActionResponse implements ChunkedToXContentO
             } else {
                 this.clusterInfo = Collections.emptyMap();
             }
-            if (in.getTransportVersion().onOrAfter(TransportVersions.V_8_500_075)) {
+            if (in.getTransportVersion().onOrAfter(TransportVersions.SEARCH_RESPONSE_CLUSTERS_COUNTERS_ADDED)) {
                 this.running = in.readVInt();
                 this.partial = in.readVInt();
                 this.failed = in.readVInt();
@@ -629,7 +629,7 @@ public class SearchResponse extends ActionResponse implements ChunkedToXContentO
                     out.writeCollection(Collections.emptyList());
                 }
             }
-            if (out.getTransportVersion().onOrAfter(TransportVersions.V_8_500_075)) {
+            if (out.getTransportVersion().onOrAfter(TransportVersions.SEARCH_RESPONSE_CLUSTERS_COUNTERS_ADDED)) {
                 out.writeVInt(running);
                 out.writeVInt(partial);
                 out.writeVInt(failed);
