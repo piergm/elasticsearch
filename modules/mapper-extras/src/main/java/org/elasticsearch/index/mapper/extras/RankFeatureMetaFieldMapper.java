@@ -8,6 +8,7 @@
 
 package org.elasticsearch.index.mapper.extras;
 
+import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.search.Query;
 import org.elasticsearch.index.mapper.MappedFieldType;
@@ -58,7 +59,12 @@ public class RankFeatureMetaFieldMapper extends MetadataFieldMapper {
 
         @Override
         public boolean fieldHasValue(FieldInfos fieldInfos) {
-            return fieldInfos.fieldInfo(NAME) != null;
+            for (FieldInfo fieldInfo : fieldInfos) {
+                if (fieldInfo.getName().equals(NAME)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         @Override
