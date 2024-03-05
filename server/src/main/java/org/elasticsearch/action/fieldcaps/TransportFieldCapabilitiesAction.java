@@ -537,30 +537,6 @@ public class TransportFieldCapabilitiesAction extends HandledTransportAction<Fie
                     final Map<ShardId, Exception> failures = new HashMap<>();
                     final Set<ShardId> unmatched = new HashSet<>();
                     if (request.includeEmptyFields()) {
-                        shardIds.stream().parallel().forEach(shardId -> {
-                            try {
-                                final FieldCapabilitiesIndexResponse response = fetcher.fetch(
-                                    (CancellableTask) task,
-                                    shardId,
-                                    fieldNameFilter,
-                                    request.filters(),
-                                    request.allowedTypes(),
-                                    request.indexFilter(),
-                                    request.nowInMillis(),
-                                    request.runtimeFields()
-                                );
-                                if (response.canMatch()) {
-                                    allResponses.add(response);
-                                } else {
-                                    unmatched.add(shardId);
-                                }
-                            } catch (Exception e) {
-                                failures.put(shardId, e);
-                            }
-                            allUnmatchedShardIds.addAll(unmatched);
-                            allFailures.putAll(failures);
-                        });
-                    } else {
                         for (ShardId shardId : shardIds) {
                             try {
                                 final FieldCapabilitiesIndexResponse response = fetcher.fetch(
@@ -589,6 +565,30 @@ public class TransportFieldCapabilitiesAction extends HandledTransportAction<Fie
                         }
                         allUnmatchedShardIds.addAll(unmatched);
                         allFailures.putAll(failures);
+                    } else {
+                        shardIds.stream().parallel().forEach(shardId -> {
+                            try {
+                                final FieldCapabilitiesIndexResponse response = fetcher.fetch(
+                                    (CancellableTask) task,
+                                    shardId,
+                                    fieldNameFilter,
+                                    request.filters(),
+                                    request.allowedTypes(),
+                                    request.indexFilter(),
+                                    request.nowInMillis(),
+                                    request.runtimeFields()
+                                );
+                                if (response.canMatch()) {
+                                    allResponses.add(response);
+                                } else {
+                                    unmatched.add(shardId);
+                                }
+                            } catch (Exception e) {
+                                failures.put(shardId, e);
+                            }
+                            allUnmatchedShardIds.addAll(unmatched);
+                            allFailures.putAll(failures);
+                        });
                     }
                 }
                 return new FieldCapabilitiesNodeResponse(allResponses, allFailures, allUnmatchedShardIds);
