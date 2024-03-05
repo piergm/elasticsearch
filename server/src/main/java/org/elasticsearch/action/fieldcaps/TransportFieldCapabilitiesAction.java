@@ -536,34 +536,60 @@ public class TransportFieldCapabilitiesAction extends HandledTransportAction<Fie
                 for (List<ShardId> shardIds : groupedShardIds.values()) {
                     final Map<ShardId, Exception> failures = new HashMap<>();
                     final Set<ShardId> unmatched = new HashSet<>();
-                    for (ShardId shardId : shardIds) {
-                        try {
-                            final FieldCapabilitiesIndexResponse response = fetcher.fetch(
-                                (CancellableTask) task,
-                                shardId,
-                                fieldNameFilter,
-                                request.filters(),
-                                request.allowedTypes(),
-                                request.indexFilter(),
-                                request.nowInMillis(),
-                                request.runtimeFields()
-                            );
-                            if (response.canMatch()) {
-                                allResponses.add(response);
-                                if (request.includeEmptyFields()) {
-                                    unmatched.clear();
-                                    failures.clear();
-                                    break;
+                    if (request.includeEmptyFields()) {
+                        for (ShardId shardId : shardIds) {
+                            try {
+                                final FieldCapabilitiesIndexResponse response = fetcher.fetch(
+                                    (CancellableTask) task,
+                                    shardId,
+                                    fieldNameFilter,
+                                    request.filters(),
+                                    request.allowedTypes(),
+                                    request.indexFilter(),
+                                    request.nowInMillis(),
+                                    request.runtimeFields()
+                                );
+                                if (response.canMatch()) {
+                                    allResponses.add(response);
+                                    if (request.includeEmptyFields()) {
+                                        unmatched.clear();
+                                        failures.clear();
+                                        break;
+                                    }
+                                } else {
+                                    unmatched.add(shardId);
                                 }
-                            } else {
-                                unmatched.add(shardId);
+                            } catch (Exception e) {
+                                failures.put(shardId, e);
                             }
-                        } catch (Exception e) {
-                            failures.put(shardId, e);
                         }
+                        allUnmatchedShardIds.addAll(unmatched);
+                        allFailures.putAll(failures);
+                    } else {
+                        shardIds.stream().parallel().forEach(shardId -> {
+                            try {
+                                final FieldCapabilitiesIndexResponse response = fetcher.fetch(
+                                    (CancellableTask) task,
+                                    shardId,
+                                    fieldNameFilter,
+                                    request.filters(),
+                                    request.allowedTypes(),
+                                    request.indexFilter(),
+                                    request.nowInMillis(),
+                                    request.runtimeFields()
+                                );
+                                if (response.canMatch()) {
+                                    allResponses.add(response);
+                                } else {
+                                    unmatched.add(shardId);
+                                }
+                            } catch (Exception e) {
+                                failures.put(shardId, e);
+                            }
+                            allUnmatchedShardIds.addAll(unmatched);
+                            allFailures.putAll(failures);
+                        });
                     }
-                    allUnmatchedShardIds.addAll(unmatched);
-                    allFailures.putAll(failures);
                 }
                 return new FieldCapabilitiesNodeResponse(allResponses, allFailures, allUnmatchedShardIds);
             });
