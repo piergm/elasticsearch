@@ -38,7 +38,7 @@ import java.util.function.Predicate;
  * Loads the mappings for an index and computes all {@link IndexFieldCapabilities}. This
  * helper class performs the core shard operation for the field capabilities action.
  */
-class FieldCapabilitiesFetcher {
+public class FieldCapabilitiesFetcher {
     private final IndicesService indicesService;
     private final boolean includeEmptyFields;
     private final Map<String, Map<String, IndexFieldCapabilities>> indexMappingHashToResponses = new HashMap<>();
@@ -46,7 +46,7 @@ class FieldCapabilitiesFetcher {
         System.getProperty("es.field_caps_empty_fields_filter", Boolean.TRUE.toString())
     );
 
-    FieldCapabilitiesFetcher(IndicesService indicesService, boolean includeEmptyFields) {
+    public FieldCapabilitiesFetcher(IndicesService indicesService, boolean includeEmptyFields) {
         this.indicesService = indicesService;
         this.includeEmptyFields = includeEmptyFields;
     }
@@ -146,7 +146,7 @@ class FieldCapabilitiesFetcher {
         return new FieldCapabilitiesIndexResponse(shardId.getIndexName(), indexMappingHash, responseMap, true);
     }
 
-    static Map<String, IndexFieldCapabilities> retrieveFieldCaps(
+    public static Map<String, IndexFieldCapabilities> retrieveFieldCaps(
         SearchExecutionContext context,
         Predicate<String> fieldNameFilter,
         String[] filters,
@@ -160,6 +160,7 @@ class FieldCapabilitiesFetcher {
         Predicate<MappedFieldType> filter = buildFilter(filters, types, context);
         boolean isTimeSeriesIndex = context.getIndexSettings().getTimestampBounds() != null;
         var fieldInfos = indexShard.getFieldInfos();
+        var fieldCaps = indexShard.getFieldCaps();
         includeEmptyFields = includeEmptyFields || enableFieldHasValue == false;
         Map<String, IndexFieldCapabilities> responseMap = new HashMap<>();
         for (Map.Entry<String, MappedFieldType> entry : context.getAllFields()) {
@@ -171,16 +172,19 @@ class FieldCapabilitiesFetcher {
             if ((includeEmptyFields || ft.fieldHasValue(fieldInfos))
                 && (indexFieldfilter.test(ft.name()) || context.isMetadataField(ft.name()))
                 && (filter == null || filter.test(ft))) {
-                IndexFieldCapabilities fieldCap = new IndexFieldCapabilities(
-                    field,
-                    ft.familyTypeName(),
-                    context.isMetadataField(field),
-                    ft.isSearchable(),
-                    ft.isAggregatable(),
-                    isTimeSeriesIndex ? ft.isDimension() : false,
-                    isTimeSeriesIndex ? ft.getMetricType() : null,
-                    ft.meta()
-                );
+                IndexFieldCapabilities fieldCap = fieldCaps.get(field);
+                if (fieldCap == null) {
+                    fieldCap = new IndexFieldCapabilities(
+                        field,
+                        ft.familyTypeName(),
+                        context.isMetadataField(field),
+                        ft.isSearchable(),
+                        ft.isAggregatable(),
+                        isTimeSeriesIndex ? ft.isDimension() : false,
+                        isTimeSeriesIndex ? ft.getMetricType() : null,
+                        ft.meta()
+                    );
+                }
                 responseMap.put(field, fieldCap);
             } else {
                 continue;
@@ -200,17 +204,11 @@ class FieldCapabilitiesFetcher {
                     // checks if the parent field contains sub-fields
                     if (context.getFieldType(parentField) == null) {
                         // no field type, it must be an object field
-                        String type = context.nestedLookup().getNestedMappers().get(parentField) != null ? "nested" : "object";
-                        IndexFieldCapabilities fieldCap = new IndexFieldCapabilities(
-                            parentField,
-                            type,
-                            false,
-                            false,
-                            false,
-                            false,
-                            null,
-                            Map.of()
-                        );
+                        IndexFieldCapabilities fieldCap = fieldCaps.get(parentField);
+                        if (fieldCap == null) {
+                            String type = context.nestedLookup().getNestedMappers().get(parentField) != null ? "nested" : "object";
+                            fieldCap = new IndexFieldCapabilities(parentField, type, false, false, false, false, null, Map.of());
+                        }
                         responseMap.put(parentField, fieldCap);
                     }
                     dotIndex = parentField.lastIndexOf('.');
