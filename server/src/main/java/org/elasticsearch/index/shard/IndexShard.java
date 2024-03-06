@@ -1007,8 +1007,10 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         return index(engine, operation);
     }
 
-    public void setFieldInfos(FieldInfos fieldInfos) {
+    public boolean setFieldInfos(FieldInfos fieldInfos) {
+        boolean equals = this.fieldInfos.equals(fieldInfos);
         this.fieldInfos = fieldInfos;
+        return equals == false;
     }
 
     public FieldInfos getFieldInfos() {
@@ -4035,16 +4037,18 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
                         null,
                         emptyMap()
                     );
-                    fieldCaps = FieldCapabilitiesFetcher.retrieveFieldCaps(
-                        searchExecutionContext,
-                        Regex.simpleMatcher("*"),
-                        new String[0],
-                        new String[0],
-                        mapperService.getMapperRegistry().getFieldFilter().apply(shardId.getIndexName()),
-                        IndexShard.this,
-                        true
-                    );
-                    setFieldInfos(FieldInfos.getMergedFieldInfos(hasValueSearcher.getIndexReader()));
+                    boolean changed = setFieldInfos(FieldInfos.getMergedFieldInfos(hasValueSearcher.getIndexReader()));
+                    if (changed) {
+                        fieldCaps = FieldCapabilitiesFetcher.retrieveFieldCaps(
+                            searchExecutionContext,
+                            Regex.simpleMatcher("*"),
+                            new String[0],
+                            new String[0],
+                            mapperService.getMapperRegistry().getFieldFilter().apply(shardId.getIndexName()),
+                            IndexShard.this,
+                            true
+                        );
+                    }
                 } catch (AlreadyClosedException ignore) {
                     // engine is closed - no updated FieldInfos is fine
                 }
