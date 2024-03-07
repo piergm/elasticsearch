@@ -160,7 +160,6 @@ public class FieldCapabilitiesFetcher {
         Predicate<MappedFieldType> filter = buildFilter(filters, types, context);
         boolean isTimeSeriesIndex = context.getIndexSettings().getTimestampBounds() != null;
         var fieldInfos = indexShard.getFieldInfos();
-        var fieldCaps = indexShard.getFieldCaps();
         includeEmptyFields = includeEmptyFields || enableFieldHasValue == false;
         Map<String, IndexFieldCapabilities> responseMap = new HashMap<>();
         for (Map.Entry<String, MappedFieldType> entry : context.getAllFields()) {
@@ -172,7 +171,11 @@ public class FieldCapabilitiesFetcher {
             if ((includeEmptyFields || ft.fieldHasValue(fieldInfos))
                 && (indexFieldfilter.test(ft.name()) || context.isMetadataField(ft.name()))
                 && (filter == null || filter.test(ft))) {
-                IndexFieldCapabilities fieldCap = fieldCaps.get(field);
+                IndexFieldCapabilities fieldCap = ft.getFieldCaps();
+                // if (fieldCap == null
+                // || context.isMetadataField(field)
+                // || (isTimeSeriesIndex && (fieldCap.isDimension() != ft.isDimension() || fieldCap.metricType() != ft.getMetricType()))) {
+                // todo mp if is Metadata then we should recreate fieldCaps?
                 if (fieldCap == null) {
                     fieldCap = new IndexFieldCapabilities(
                         field,
@@ -184,6 +187,7 @@ public class FieldCapabilitiesFetcher {
                         isTimeSeriesIndex ? ft.getMetricType() : null,
                         ft.meta()
                     );
+                    ft.setFieldCaps(fieldCap);
                 }
                 responseMap.put(field, fieldCap);
             } else {
@@ -204,12 +208,11 @@ public class FieldCapabilitiesFetcher {
                     // checks if the parent field contains sub-fields
                     if (context.getFieldType(parentField) == null) {
                         // no field type, it must be an object field
-                        IndexFieldCapabilities fieldCap = fieldCaps.get(parentField);
-                        if (fieldCap == null) {
-                            String type = context.nestedLookup().getNestedMappers().get(parentField) != null ? "nested" : "object";
-                            fieldCap = new IndexFieldCapabilities(parentField, type, false, false, false, false, null, Map.of());
-                        }
-                        responseMap.put(parentField, fieldCap);
+                        String type = context.nestedLookup().getNestedMappers().get(parentField) != null ? "nested" : "object";
+                        responseMap.put(
+                            parentField,
+                            new IndexFieldCapabilities(parentField, type, false, false, false, false, null, Map.of())
+                        );
                     }
                     dotIndex = parentField.lastIndexOf('.');
                 }

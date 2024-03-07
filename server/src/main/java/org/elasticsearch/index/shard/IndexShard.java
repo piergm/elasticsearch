@@ -32,8 +32,6 @@ import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRunnable;
 import org.elasticsearch.action.admin.indices.flush.FlushRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
-import org.elasticsearch.action.fieldcaps.FieldCapabilitiesFetcher;
-import org.elasticsearch.action.fieldcaps.IndexFieldCapabilities;
 import org.elasticsearch.action.support.PlainActionFuture;
 import org.elasticsearch.action.support.SubscribableListener;
 import org.elasticsearch.action.support.replication.PendingReplicationActions;
@@ -52,7 +50,6 @@ import org.elasticsearch.common.lucene.Lucene;
 import org.elasticsearch.common.lucene.index.ElasticsearchDirectoryReader;
 import org.elasticsearch.common.metrics.CounterMetric;
 import org.elasticsearch.common.metrics.MeanMetric;
-import org.elasticsearch.common.regex.Regex;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.util.CollectionUtils;
@@ -113,7 +110,6 @@ import org.elasticsearch.index.mapper.ParsedDocument;
 import org.elasticsearch.index.mapper.SourceToParse;
 import org.elasticsearch.index.mapper.Uid;
 import org.elasticsearch.index.merge.MergeStats;
-import org.elasticsearch.index.query.SearchExecutionContext;
 import org.elasticsearch.index.recovery.RecoveryStats;
 import org.elasticsearch.index.refresh.RefreshStats;
 import org.elasticsearch.index.search.stats.FieldUsageStats;
@@ -188,7 +184,6 @@ import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 
-import static java.util.Collections.emptyMap;
 import static org.elasticsearch.cluster.metadata.DataStream.TIMESERIES_LEAF_READERS_SORTER;
 import static org.elasticsearch.core.Strings.format;
 import static org.elasticsearch.index.seqno.RetentionLeaseActions.RETAIN_ALL;
@@ -231,8 +226,6 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
     private final IndexStorePlugin.SnapshotCommitSupplier snapshotCommitSupplier;
     private final Engine.IndexCommitListener indexCommitListener;
     private FieldInfos fieldInfos;
-    private final IndexService indexService;
-    private volatile Map<String, IndexFieldCapabilities> fieldCaps;
     // sys prop to disable the field has value feature, defaults to true (enabled) if set to false (disabled) the
     // field caps always returns empty fields ignoring the value of the query param `field_caps_empty_fields_filter`.
     private final boolean enableFieldHasValue = Booleans.parseBoolean(
@@ -329,8 +322,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         final CircuitBreakerService circuitBreakerService,
         final IndexStorePlugin.SnapshotCommitSupplier snapshotCommitSupplier,
         final LongSupplier relativeTimeInNanosSupplier,
-        final Engine.IndexCommitListener indexCommitListener,
-        final IndexService indexService
+        final Engine.IndexCommitListener indexCommitListener
     ) throws IOException {
         super(shardRouting.shardId(), indexSettings);
         assert shardRouting.initializing();
@@ -417,8 +409,6 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         this.relativeTimeInNanosSupplier = relativeTimeInNanosSupplier;
         this.indexCommitListener = indexCommitListener;
         this.fieldInfos = FieldInfos.EMPTY;
-        this.indexService = indexService;
-        this.fieldCaps = Map.of();
     }
 
     public ThreadPool getThreadPool() {
@@ -1013,10 +1003,6 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
 
     public FieldInfos getFieldInfos() {
         return fieldInfos;
-    }
-
-    public Map<String, IndexFieldCapabilities> getFieldCaps() {
-        return fieldCaps;
     }
 
     public static Engine.Index prepareIndex(
@@ -4027,25 +4013,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         public void afterRefresh(boolean didRefresh) {
             if (enableFieldHasValue) {
                 try (Engine.Searcher hasValueSearcher = getEngine().acquireSearcher("field_has_value");) {
-                    SearchExecutionContext searchExecutionContext = indexService.newSearchExecutionContext(
-                        shardId.id(),
-                        0,
-                        hasValueSearcher,
-                        System::currentTimeMillis,
-                        null,
-                        emptyMap()
-                    );
                     setFieldInfos(FieldInfos.getMergedFieldInfos(hasValueSearcher.getIndexReader()));
-                    fieldCaps = FieldCapabilitiesFetcher.retrieveFieldCaps(
-                        searchExecutionContext,
-                        Regex.simpleMatcher("*"),
-                        new String[0],
-                        new String[0],
-                        mapperService.getMapperRegistry().getFieldFilter().apply(shardId.getIndexName()),
-                        IndexShard.this,
-                        true
-                    );
-
                 } catch (AlreadyClosedException ignore) {
                     // engine is closed - no updated FieldInfos is fine
                 }
