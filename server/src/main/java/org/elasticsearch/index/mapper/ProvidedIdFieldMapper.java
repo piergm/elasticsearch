@@ -69,7 +69,6 @@ public class ProvidedIdFieldMapper extends IdFieldMapper {
 
         @Override
         public boolean isAggregatable() {
-            if (this.fieldDataEnabled == null) return false;
             return fieldDataEnabled.getAsBoolean();
         }
 
