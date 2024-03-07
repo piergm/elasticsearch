@@ -30,6 +30,7 @@ import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.ElasticsearchParseException;
+import org.elasticsearch.action.fieldcaps.IndexFieldCapabilities;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.common.geo.ShapeRelation;
 import org.elasticsearch.common.time.DateMathParser;
@@ -68,6 +69,7 @@ public abstract class MappedFieldType {
     private final boolean isStored;
     private final TextSearchInfo textSearchInfo;
     private final Map<String, String> meta;
+    private IndexFieldCapabilities fieldCaps; // todo add final
 
     public MappedFieldType(
         String name,
@@ -85,6 +87,20 @@ public abstract class MappedFieldType {
         // meta should be sorted but for the one item or empty case we can fall back to immutable maps to save some memory since order is
         // irrelevant
         this.meta = meta.size() <= 1 ? Map.copyOf(meta) : meta;
+        // try {
+        // this.fieldCaps = new IndexFieldCapabilities(
+        // this.name,
+        // typeName(),
+        // false,
+        // isSearchable(),
+        // isAggregatable(),
+        // isDimension(),
+        // getMetricType(),
+        // meta()
+        // );
+        // } catch (Exception e) {
+        // this.fieldCaps = null;
+        // }
     }
 
     /**
@@ -168,6 +184,20 @@ public abstract class MappedFieldType {
      */
     public final boolean isStored() {
         return isStored;
+    }
+
+    /**
+     * Returns fieldCaps
+     */
+    public final IndexFieldCapabilities getFieldCaps() {
+        return fieldCaps;
+    }
+
+    /**
+     * Returns fieldCaps
+     */
+    public final void setFieldCaps(IndexFieldCapabilities fieldCaps) {
+        this.fieldCaps = fieldCaps;
     }
 
     /**
