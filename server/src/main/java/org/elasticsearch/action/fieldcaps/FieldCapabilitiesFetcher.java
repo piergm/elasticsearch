@@ -9,6 +9,7 @@
 package org.elasticsearch.action.fieldcaps;
 
 import org.elasticsearch.cluster.metadata.MappingMetadata;
+import org.elasticsearch.common.regex.Regex;
 import org.elasticsearch.core.Booleans;
 import org.elasticsearch.core.Nullable;
 import org.elasticsearch.index.IndexService;
@@ -161,6 +162,11 @@ public class FieldCapabilitiesFetcher {
         boolean isTimeSeriesIndex = context.getIndexSettings().getTimestampBounds() != null;
         var fieldInfos = indexShard.getFieldInfos();
         includeEmptyFields = includeEmptyFields || enableFieldHasValue == false;
+        if (includeEmptyFields == false
+            && indexShard.getNonEmptyFieldCaps().isEmpty() == false
+            && Regex.simpleMatcher("*").equals(fieldNameFilter)) { // todo MP check indexFilter?
+            return indexShard.getNonEmptyFieldCaps();
+        }
         Map<String, IndexFieldCapabilities> responseMap = new HashMap<>();
         for (Map.Entry<String, MappedFieldType> entry : context.getAllFields()) {
             final String field = entry.getKey();
@@ -171,24 +177,16 @@ public class FieldCapabilitiesFetcher {
             if ((includeEmptyFields || ft.fieldHasValue(fieldInfos))
                 && (indexFieldfilter.test(ft.name()) || context.isMetadataField(ft.name()))
                 && (filter == null || filter.test(ft))) {
-                IndexFieldCapabilities fieldCap = ft.getFieldCaps();
-                // if (fieldCap == null
-                // || context.isMetadataField(field)
-                // || (isTimeSeriesIndex && (fieldCap.isDimension() != ft.isDimension() || fieldCap.metricType() != ft.getMetricType()))) {
-                // todo mp if is Metadata then we should recreate fieldCaps?
-                if (fieldCap == null) {
-                    fieldCap = new IndexFieldCapabilities(
-                        field,
-                        ft.familyTypeName(),
-                        context.isMetadataField(field),
-                        ft.isSearchable(),
-                        ft.isAggregatable(),
-                        isTimeSeriesIndex ? ft.isDimension() : false,
-                        isTimeSeriesIndex ? ft.getMetricType() : null,
-                        ft.meta()
-                    );
-                    ft.setFieldCaps(fieldCap);
-                }
+                IndexFieldCapabilities fieldCap = new IndexFieldCapabilities(
+                    field,
+                    ft.familyTypeName(),
+                    context.isMetadataField(field),
+                    ft.isSearchable(),
+                    ft.isAggregatable(),
+                    isTimeSeriesIndex ? ft.isDimension() : false,
+                    isTimeSeriesIndex ? ft.getMetricType() : null,
+                    ft.meta()
+                );
                 responseMap.put(field, fieldCap);
             } else {
                 continue;
