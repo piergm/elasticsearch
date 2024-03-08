@@ -221,6 +221,9 @@ public class FieldCapabilitiesFetcher {
                 }
             }
         }
+        if (includeEmptyFields == false) {
+            indexShard.setNonEmptyFieldCaps(responseMap);
+        }
         return responseMap;
     }
 
