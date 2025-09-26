@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import static org.elasticsearch.action.fieldcaps.FieldCapabilitiesRequest.INCLUDE_INDICES_RESOLUTION;
+
 class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements IndicesRequest {
 
     private final List<ShardId> shardIds;
@@ -41,6 +43,7 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
     private final long nowInMillis;
     private final Map<String, Object> runtimeFields;
     private final boolean includeEmptyFields;
+    private final boolean includeIndicesResolution;
 
     FieldCapabilitiesNodeRequest(StreamInput in) throws IOException {
         super(in);
@@ -61,6 +64,11 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
             includeEmptyFields = in.readBoolean();
         } else {
             includeEmptyFields = true;
+        }
+        if (in.getTransportVersion().supports(INCLUDE_INDICES_RESOLUTION)) {
+            includeIndicesResolution = in.readBoolean();
+        } else {
+            includeIndicesResolution = false;
         }
     }
 
@@ -84,6 +92,31 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
         this.nowInMillis = nowInMillis;
         this.runtimeFields = runtimeFields;
         this.includeEmptyFields = includeEmptyFields;
+        this.includeIndicesResolution = false;
+    }
+
+    FieldCapabilitiesNodeRequest(
+        List<ShardId> shardIds,
+        String[] fields,
+        String[] filters,
+        String[] allowedTypes,
+        OriginalIndices originalIndices,
+        QueryBuilder indexFilter,
+        long nowInMillis,
+        Map<String, Object> runtimeFields,
+        boolean includeEmptyFields,
+        boolean includeIndicesResolution
+    ) {
+        this.shardIds = Objects.requireNonNull(shardIds);
+        this.fields = fields;
+        this.filters = filters;
+        this.allowedTypes = allowedTypes;
+        this.originalIndices = originalIndices;
+        this.indexFilter = indexFilter;
+        this.nowInMillis = nowInMillis;
+        this.runtimeFields = runtimeFields;
+        this.includeEmptyFields = includeEmptyFields;
+        this.includeIndicesResolution = includeIndicesResolution;
     }
 
     public String[] fields() {
@@ -132,6 +165,10 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
         return includeEmptyFields;
     }
 
+    public boolean includeIndicesResolution() {
+        return includeIndicesResolution;
+    }
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
@@ -148,6 +185,9 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
         if (out.getTransportVersion().onOrAfter(TransportVersions.V_8_13_0)) {
             out.writeBoolean(includeEmptyFields);
         }
+        if (out.getTransportVersion().supports(INCLUDE_INDICES_RESOLUTION)) {
+            out.writeBoolean(includeIndicesResolution);
+        }
     }
 
     @Override
@@ -159,7 +199,7 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
     public String getDescription() {
         final StringBuilder stringBuilder = new StringBuilder("shards[");
         Strings.collectionToDelimitedStringWithLimit(shardIds, ",", 1024, stringBuilder);
-        return completeDescription(stringBuilder, fields, filters, allowedTypes, includeEmptyFields);
+        return completeDescription(stringBuilder, fields, filters, allowedTypes, includeEmptyFields, includeIndicesResolution);
     }
 
     static String completeDescription(
@@ -167,7 +207,8 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
         String[] fields,
         String[] filters,
         String[] allowedTypes,
-        boolean includeEmptyFields
+        boolean includeEmptyFields,
+        boolean includeIndicesResolution
     ) {
         stringBuilder.append("], fields[");
         Strings.collectionToDelimitedStringWithLimit(Arrays.asList(fields), ",", 1024, stringBuilder);
@@ -177,6 +218,8 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
         Strings.collectionToDelimitedString(Arrays.asList(allowedTypes), ",", stringBuilder);
         stringBuilder.append("], includeEmptyFields[");
         stringBuilder.append(includeEmptyFields);
+        stringBuilder.append("], includeIndicesResolution[");
+        stringBuilder.append(includeIndicesResolution);
         stringBuilder.append("]");
         return stringBuilder.toString();
     }
@@ -204,12 +247,13 @@ class FieldCapabilitiesNodeRequest extends LegacyActionRequest implements Indice
             && Objects.equals(originalIndices, that.originalIndices)
             && Objects.equals(indexFilter, that.indexFilter)
             && Objects.equals(runtimeFields, that.runtimeFields)
-            && includeEmptyFields == that.includeEmptyFields;
+            && includeEmptyFields == that.includeEmptyFields
+            && includeIndicesResolution == that.includeIndicesResolution;
     }
 
     @Override
     public int hashCode() {
-        int result = Objects.hash(originalIndices, indexFilter, nowInMillis, runtimeFields, includeEmptyFields);
+        int result = Objects.hash(originalIndices, indexFilter, nowInMillis, runtimeFields, includeEmptyFields, includeIndicesResolution);
         result = 31 * result + shardIds.hashCode();
         result = 31 * result + Arrays.hashCode(fields);
         result = 31 * result + Arrays.hashCode(filters);

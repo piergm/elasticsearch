@@ -9,6 +9,7 @@
 
 package org.elasticsearch.action.fieldcaps;
 
+import org.elasticsearch.TransportVersion;
 import org.elasticsearch.TransportVersions;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.IndicesRequest;
@@ -37,6 +38,7 @@ import java.util.Set;
 public final class FieldCapabilitiesRequest extends LegacyActionRequest implements IndicesRequest.Replaceable, ToXContentObject {
     public static final String NAME = "field_caps_request";
     public static final IndicesOptions DEFAULT_INDICES_OPTIONS = IndicesOptions.strictExpandOpenAndForbidClosed();
+    static final TransportVersion INCLUDE_INDICES_RESOLUTION = TransportVersion.fromName("field_caps_includes_indices_resolution");
 
     private String clusterAlias = RemoteClusterAware.LOCAL_CLUSTER_GROUP_KEY;
 
@@ -47,6 +49,11 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
     private String[] types = Strings.EMPTY_ARRAY;
     private boolean includeUnmapped = false;
     private boolean includeEmptyFields = true;
+    /**
+     * Controls whether the field caps response should include index resolutions details.
+     * This flag is not exposed to the rest layer.
+     */
+    private boolean includeIndicesResolution = false;
     /**
      * Controls whether the field caps response should always include the list of indices
      * where a field is defined. This flag is only used locally on the coordinating node,
@@ -90,6 +97,9 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
             clusterAlias = in.readOptionalString();
         } else {
             clusterAlias = RemoteClusterAware.LOCAL_CLUSTER_GROUP_KEY;
+        }
+        if (in.getTransportVersion().supports(INCLUDE_INDICES_RESOLUTION)) {
+            includeIndicesResolution = in.readBoolean();
         }
     }
 
@@ -143,6 +153,9 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
         if (out.getTransportVersion().onOrAfter(TransportVersions.FIELD_CAPS_ADD_CLUSTER_ALIAS)
             || out.getTransportVersion().isPatchFrom(TransportVersions.V_8_19_FIELD_CAPS_ADD_CLUSTER_ALIAS)) {
             out.writeOptionalString(clusterAlias);
+        }
+        if (out.getTransportVersion().supports(INCLUDE_INDICES_RESOLUTION)) {
+            out.writeBoolean(includeIndicesResolution);
         }
     }
 
@@ -217,6 +230,11 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
         return this;
     }
 
+    public FieldCapabilitiesRequest includeIndicesResolution(boolean includeIndicesResolution) {
+        this.includeIndicesResolution = includeIndicesResolution;
+        return this;
+    }
+
     public FieldCapabilitiesRequest includeIndices(boolean includeIndices) {
         this.includeIndices = includeIndices;
         return this;
@@ -261,6 +279,10 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
 
     public boolean includeEmptyFields() {
         return includeEmptyFields;
+    }
+
+    public boolean includeIndicesResolution() {
+        return includeIndicesResolution;
     }
 
     /**
@@ -319,7 +341,8 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
             && Arrays.equals(filters, that.filters)
             && Arrays.equals(types, that.types)
             && Objects.equals(runtimeFields, that.runtimeFields)
-            && includeEmptyFields == that.includeEmptyFields;
+            && includeEmptyFields == that.includeEmptyFields
+            && includeIndicesResolution == that.includeIndicesResolution;
     }
 
     @Override
@@ -331,7 +354,8 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
             indexFilter,
             nowInMillis,
             runtimeFields,
-            includeEmptyFields
+            includeEmptyFields,
+            includeIndicesResolution
         );
         result = 31 * result + Arrays.hashCode(indices);
         result = 31 * result + Arrays.hashCode(fields);
@@ -344,7 +368,14 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
     public String getDescription() {
         final StringBuilder stringBuilder = new StringBuilder("indices[");
         Strings.collectionToDelimitedStringWithLimit(Arrays.asList(indices), ",", 1024, stringBuilder);
-        return FieldCapabilitiesNodeRequest.completeDescription(stringBuilder, fields, filters, types, includeEmptyFields);
+        return FieldCapabilitiesNodeRequest.completeDescription(
+            stringBuilder,
+            fields,
+            filters,
+            types,
+            includeEmptyFields,
+            includeIndicesResolution
+        );
     }
 
     @Override
