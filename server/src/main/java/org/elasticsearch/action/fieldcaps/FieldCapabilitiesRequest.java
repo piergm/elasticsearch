@@ -40,6 +40,8 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
     public static final IndicesOptions DEFAULT_INDICES_OPTIONS = IndicesOptions.strictExpandOpenAndForbidClosed();
     static final TransportVersion INCLUDE_INDICES_RESOLUTION = TransportVersion.fromName("field_caps_includes_indices_resolution");
 
+    private static final TransportVersion FIELD_CAPS_ADD_CLUSTER_ALIAS = TransportVersion.fromName("field_caps_add_cluster_alias");
+
     private String clusterAlias = RemoteClusterAware.LOCAL_CLUSTER_GROUP_KEY;
 
     private String[] indices = Strings.EMPTY_ARRAY;
@@ -92,8 +94,7 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
         if (in.getTransportVersion().onOrAfter(TransportVersions.V_8_13_0)) {
             includeEmptyFields = in.readBoolean();
         }
-        if (in.getTransportVersion().onOrAfter(TransportVersions.FIELD_CAPS_ADD_CLUSTER_ALIAS)
-            || in.getTransportVersion().isPatchFrom(TransportVersions.V_8_19_FIELD_CAPS_ADD_CLUSTER_ALIAS)) {
+        if (in.getTransportVersion().supports(FIELD_CAPS_ADD_CLUSTER_ALIAS)) {
             clusterAlias = in.readOptionalString();
         } else {
             clusterAlias = RemoteClusterAware.LOCAL_CLUSTER_GROUP_KEY;
@@ -150,8 +151,7 @@ public final class FieldCapabilitiesRequest extends LegacyActionRequest implemen
         if (out.getTransportVersion().onOrAfter(TransportVersions.V_8_13_0)) {
             out.writeBoolean(includeEmptyFields);
         }
-        if (out.getTransportVersion().onOrAfter(TransportVersions.FIELD_CAPS_ADD_CLUSTER_ALIAS)
-            || out.getTransportVersion().isPatchFrom(TransportVersions.V_8_19_FIELD_CAPS_ADD_CLUSTER_ALIAS)) {
+        if (out.getTransportVersion().supports(FIELD_CAPS_ADD_CLUSTER_ALIAS)) {
             out.writeOptionalString(clusterAlias);
         }
         if (out.getTransportVersion().supports(INCLUDE_INDICES_RESOLUTION)) {
