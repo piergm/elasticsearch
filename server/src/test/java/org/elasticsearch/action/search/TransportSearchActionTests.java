@@ -565,8 +565,11 @@ public class TransportSearchActionTests extends ESTestCase {
             awaitLatch(latch, 5, TimeUnit.SECONDS);
             assertNotNull(failure.get());
             // the intention here is not to test that we throw NPE, rather to trigger a situation that makes
-            // SearchResponseMerger#getMergedResponse fail unexpectedly and verify that the listener is properly notified with the NPE
-            assertThat(failure.get(), instanceOf(NullPointerException.class));
+            // SearchResponseMerger fail unexpectedly and verify that the listener is properly notified.
+            // The NPE may be wrapped in transport exceptions depending on where in the processing it occurs.
+            Throwable rootCause = org.elasticsearch.ExceptionsHelper.unwrap(failure.get(), NullPointerException.class);
+            assertNotNull("Expected NullPointerException in cause chain", rootCause);
+            assertThat(rootCause, instanceOf(NullPointerException.class));
             assertEquals(0, service.getConnectionManager().size());
         } finally {
             for (MockTransportService mockTransportService : mockTransportServices) {
