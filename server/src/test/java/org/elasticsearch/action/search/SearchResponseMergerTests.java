@@ -945,74 +945,86 @@ public class SearchResponseMergerTests extends ESTestCase {
                 sortFields,
                 priorityQueue
             );
-            {
-                SearchHits searchHits = new SearchHits(
-                    hits,
-                    new TotalHits(10, TotalHits.Relation.EQUAL_TO),
-                    Float.NaN,
-                    sortFields,
-                    null,
-                    null
-                );
-                SearchResponse searchResponse = new SearchResponse(
-                    searchHits,
-                    null,
-                    null,
-                    false,
-                    false,
-                    null,
-                    1,
-                    null,
-                    1,
-                    1,
-                    0,
-                    1L,
-                    ShardSearchFailure.EMPTY_ARRAY,
-                    SearchResponse.Clusters.EMPTY
-                );
-                try {
-                    merger.add(searchResponse);
-                } finally {
-                    searchHits.decRef();
-                    searchResponse.decRef();
-                }
+            // Copy hits array for comparison since the merger may release the original SearchResponse
+            // which nulls out the underlying array in SearchHits.deallocate()
+            SearchHit[] expectedHits = Arrays.copyOf(hits, hits.length);
+            for (SearchHit hit : expectedHits) {
+                hit.incRef();
             }
-            {
-                SearchResponse searchResponse = new SearchResponse(
-                    SearchHits.empty(new TotalHits(0, TotalHits.Relation.EQUAL_TO), Float.NaN),
-                    null,
-                    null,
-                    false,
-                    false,
-                    null,
-                    1,
-                    null,
-                    1,
-                    1,
-                    0,
-                    1L,
-                    ShardSearchFailure.EMPTY_ARRAY,
-                    SearchResponse.Clusters.EMPTY
-                );
-                try {
-                    merger.add(searchResponse);
-                } finally {
-                    searchResponse.decRef();
-                }
-            }
-            assertEquals(2, merger.numResponses());
-            SearchResponse mergedResponse = merger.getMergedResponse(clusters);
             try {
-                assertEquals(10, mergedResponse.getHits().getTotalHits().value());
-                assertEquals(10, mergedResponse.getHits().getHits().length);
-                assertEquals(2, mergedResponse.getTotalShards());
-                assertEquals(2, mergedResponse.getSuccessfulShards());
-                assertEquals(0, mergedResponse.getSkippedShards());
-                assertArrayEquals(sortFields, mergedResponse.getHits().getSortFields());
-                assertArrayEquals(hits, mergedResponse.getHits().getHits());
-                assertEquals(clusters, mergedResponse.getClusters());
+                {
+                    SearchHits searchHits = new SearchHits(
+                        hits,
+                        new TotalHits(10, TotalHits.Relation.EQUAL_TO),
+                        Float.NaN,
+                        sortFields,
+                        null,
+                        null
+                    );
+                    SearchResponse searchResponse = new SearchResponse(
+                        searchHits,
+                        null,
+                        null,
+                        false,
+                        false,
+                        null,
+                        1,
+                        null,
+                        1,
+                        1,
+                        0,
+                        1L,
+                        ShardSearchFailure.EMPTY_ARRAY,
+                        SearchResponse.Clusters.EMPTY
+                    );
+                    try {
+                        merger.add(searchResponse);
+                    } finally {
+                        searchHits.decRef();
+                        searchResponse.decRef();
+                    }
+                }
+                {
+                    SearchResponse searchResponse = new SearchResponse(
+                        SearchHits.empty(new TotalHits(0, TotalHits.Relation.EQUAL_TO), Float.NaN),
+                        null,
+                        null,
+                        false,
+                        false,
+                        null,
+                        1,
+                        null,
+                        1,
+                        1,
+                        0,
+                        1L,
+                        ShardSearchFailure.EMPTY_ARRAY,
+                        SearchResponse.Clusters.EMPTY
+                    );
+                    try {
+                        merger.add(searchResponse);
+                    } finally {
+                        searchResponse.decRef();
+                    }
+                }
+                assertEquals(2, merger.numResponses());
+                SearchResponse mergedResponse = merger.getMergedResponse(clusters);
+                try {
+                    assertEquals(10, mergedResponse.getHits().getTotalHits().value());
+                    assertEquals(10, mergedResponse.getHits().getHits().length);
+                    assertEquals(2, mergedResponse.getTotalShards());
+                    assertEquals(2, mergedResponse.getSuccessfulShards());
+                    assertEquals(0, mergedResponse.getSkippedShards());
+                    assertArrayEquals(sortFields, mergedResponse.getHits().getSortFields());
+                    assertArrayEquals(expectedHits, mergedResponse.getHits().getHits());
+                    assertEquals(clusters, mergedResponse.getClusters());
+                } finally {
+                    mergedResponse.decRef();
+                }
             } finally {
-                mergedResponse.decRef();
+                for (SearchHit hit : expectedHits) {
+                    hit.decRef();
+                }
             }
         }
     }
@@ -1628,6 +1640,211 @@ public class SearchResponseMergerTests extends ESTestCase {
                 return clusterAliasCompareTo;
             }
             return Integer.compare(a.docId(), b.docId());
+        }
+    }
+
+    /**
+     * Tests that SearchResponse is released immediately after add() completes,
+     * freeing memory without waiting for getMergedResponse().
+     */
+    public void testSearchResponseReleasedAfterAdd() {
+        long currentRelativeTime = randomLong();
+        final SearchTimeProvider timeProvider = new SearchTimeProvider(randomLong(), 0, () -> currentRelativeTime);
+        try (SearchResponseMerger merger = new SearchResponseMerger(0, 10, Integer.MAX_VALUE, timeProvider, emptyReduceContextBuilder())) {
+            SearchHit hit = new SearchHit(1);
+            hit.shard(new SearchShardTarget("node", new ShardId(new Index("test", "uuid"), 0), "remote"));
+            SearchHit[] hits = new SearchHit[] { hit };
+            SearchHits searchHits = new SearchHits(hits, new TotalHits(1, TotalHits.Relation.EQUAL_TO), Float.NaN);
+            SearchResponse searchResponse = new SearchResponse(
+                searchHits,
+                null,
+                null,
+                false,
+                false,
+                null,
+                1,
+                null,
+                1,
+                1,
+                0,
+                1L,
+                ShardSearchFailure.EMPTY_ARRAY,
+                SearchResponse.Clusters.EMPTY
+            );
+
+            // Track if searchResponse still has references
+            assertTrue("SearchResponse should have references before add", searchResponse.hasReferences());
+
+            // Add to merger - this should release the response after extraction
+            merger.add(searchResponse);
+
+            // After add(), the merger has released its ref, but the original creation ref is still held
+            // Call decRef to release our own ref
+            searchResponse.decRef();
+
+            // After our decRef, searchResponse should be fully released
+            assertFalse("SearchResponse should be released after add() and our decRef", searchResponse.hasReferences());
+
+            // But the merger should still work correctly
+            SearchResponse mergedResponse = merger.getMergedResponse(SearchResponse.Clusters.EMPTY);
+            try {
+                assertEquals(1, mergedResponse.getHits().getTotalHits().value());
+                assertEquals(1, mergedResponse.getHits().getHits().length);
+            } finally {
+                mergedResponse.decRef();
+            }
+        }
+    }
+
+    /**
+     * Tests concurrent additions from multiple threads.
+     */
+    public void testConcurrentAdditions() throws InterruptedException {
+        long currentRelativeTime = randomLong();
+        final SearchTimeProvider timeProvider = new SearchTimeProvider(randomLong(), 0, () -> currentRelativeTime);
+        int numThreads = randomIntBetween(4, 10);
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+
+        try (SearchResponseMerger merger = new SearchResponseMerger(0, 100, Integer.MAX_VALUE, timeProvider, emptyReduceContextBuilder())) {
+            int numResponses = randomIntBetween(10, 50);
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(numResponses);
+
+            for (int i = 0; i < numResponses; i++) {
+                final int idx = i;
+                executor.submit(() -> {
+                    try {
+                        SearchHit hit = new SearchHit(idx);
+                        hit.shard(new SearchShardTarget("node", new ShardId(new Index("test-" + idx, "uuid-" + idx), 0), "cluster-" + idx));
+                        SearchHits searchHits = new SearchHits(
+                            new SearchHit[] { hit },
+                            new TotalHits(1, TotalHits.Relation.EQUAL_TO),
+                            Float.NaN
+                        );
+                        SearchResponse searchResponse = new SearchResponse(
+                            searchHits,
+                            null,
+                            null,
+                            false,
+                            false,
+                            null,
+                            1,
+                            null,
+                            1,
+                            1,
+                            0,
+                            1L,
+                            ShardSearchFailure.EMPTY_ARRAY,
+                            SearchResponse.Clusters.EMPTY
+                        );
+                        try {
+                            merger.add(searchResponse);
+                        } finally {
+                            searchResponse.decRef();
+                        }
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            assertTrue("Timed out waiting for concurrent additions", latch.await(30, TimeUnit.SECONDS));
+            assertEquals(numResponses, merger.numResponses());
+
+            SearchResponse mergedResponse = merger.getMergedResponse(SearchResponse.Clusters.EMPTY);
+            try {
+                assertEquals(numResponses, mergedResponse.getTotalShards());
+                assertEquals(numResponses, mergedResponse.getSuccessfulShards());
+                assertEquals(numResponses, mergedResponse.getHits().getTotalHits().value());
+            } finally {
+                mergedResponse.decRef();
+            }
+        } finally {
+            executor.shutdown();
+            assertTrue("Executor did not terminate", executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
+    }
+
+    /**
+     * Tests that getMergedResponse can be called multiple times with accumulated state.
+     */
+    public void testMultipleGetMergedResponseCalls() {
+        long currentRelativeTime = randomLong();
+        final SearchTimeProvider timeProvider = new SearchTimeProvider(randomLong(), 0, () -> currentRelativeTime);
+        try (SearchResponseMerger merger = new SearchResponseMerger(0, 10, Integer.MAX_VALUE, timeProvider, emptyReduceContextBuilder())) {
+            // Add first response
+            {
+                SearchHit hit = new SearchHit(1);
+                hit.shard(new SearchShardTarget("node", new ShardId(new Index("test1", "uuid1"), 0), "cluster1"));
+                SearchHits searchHits = new SearchHits(new SearchHit[] { hit }, new TotalHits(1, TotalHits.Relation.EQUAL_TO), Float.NaN);
+                SearchResponse searchResponse = new SearchResponse(
+                    searchHits,
+                    null,
+                    null,
+                    false,
+                    false,
+                    null,
+                    1,
+                    null,
+                    1,
+                    1,
+                    0,
+                    1L,
+                    ShardSearchFailure.EMPTY_ARRAY,
+                    SearchResponse.Clusters.EMPTY
+                );
+                try {
+                    merger.add(searchResponse);
+                } finally {
+                    searchResponse.decRef();
+                }
+            }
+
+            // Get first merged response - should have 1 hit
+            SearchResponse firstMerged = merger.getMergedResponse(SearchResponse.Clusters.EMPTY);
+            try {
+                assertEquals(1, firstMerged.getHits().getTotalHits().value());
+                assertEquals(1, firstMerged.getTotalShards());
+            } finally {
+                firstMerged.decRef();
+            }
+
+            // Add second response
+            {
+                SearchHit hit = new SearchHit(2);
+                hit.shard(new SearchShardTarget("node", new ShardId(new Index("test2", "uuid2"), 0), "cluster2"));
+                SearchHits searchHits = new SearchHits(new SearchHit[] { hit }, new TotalHits(1, TotalHits.Relation.EQUAL_TO), Float.NaN);
+                SearchResponse searchResponse = new SearchResponse(
+                    searchHits,
+                    null,
+                    null,
+                    false,
+                    false,
+                    null,
+                    1,
+                    null,
+                    1,
+                    1,
+                    0,
+                    1L,
+                    ShardSearchFailure.EMPTY_ARRAY,
+                    SearchResponse.Clusters.EMPTY
+                );
+                try {
+                    merger.add(searchResponse);
+                } finally {
+                    searchResponse.decRef();
+                }
+            }
+
+            // Get second merged response - should now have 2 hits total
+            SearchResponse secondMerged = merger.getMergedResponse(SearchResponse.Clusters.EMPTY);
+            try {
+                assertEquals(2, secondMerged.getHits().getTotalHits().value());
+                assertEquals(2, secondMerged.getTotalShards());
+                assertEquals(2, merger.numResponses());
+            } finally {
+                secondMerged.decRef();
+            }
         }
     }
 }

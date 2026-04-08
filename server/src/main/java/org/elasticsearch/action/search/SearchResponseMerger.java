@@ -44,7 +44,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.elasticsearch.action.search.SearchPhaseController.mergeTopDocs;
 
@@ -73,11 +72,28 @@ public final class SearchResponseMerger implements Releasable {
     final int trackTotalHitsUpTo;
     private final SearchTimeProvider searchTimeProvider;
     private final AggregationReduceContext.Builder aggReduceContextBuilder;
-    private final List<SearchResponse> searchResponses = new CopyOnWriteArrayList<>();
+
+    // Accumulated state from all added responses (guarded by synchronized methods)
+    private int totalShards;
+    private int skippedShards;
+    private int successfulShards;
+    private int numReducePhases;
+    private final List<ShardSearchFailure> failures = new ArrayList<>();
+    private final Map<String, SearchProfileShardResult> profileResults = new HashMap<>();
+    private final List<InternalAggregations> aggs = new ArrayList<>();
+    private final Map<ShardIdAndClusterAlias, Integer> shards = new TreeMap<>();
+    private final List<TopDocs> topDocsList = new ArrayList<>();
+    private final Map<String, List<Suggest.Suggestion<?>>> groupedSuggestions = new HashMap<>();
+    private Boolean trackTotalHits = null;
+    private final TopDocsStats topDocsStats;
+    private int responseCount;
+
+    // SearchHits that we've incRef'd and need to release on close
+    private final List<SearchHit> hitsToRelease = new ArrayList<>();
 
     private final Releasable releasable = LeakTracker.wrap(() -> {
-        for (SearchResponse searchResponse : searchResponses) {
-            searchResponse.decRef();
+        for (SearchHit hit : hitsToRelease) {
+            hit.decRef();
         }
     });
 
@@ -93,52 +109,20 @@ public final class SearchResponseMerger implements Releasable {
         this.trackTotalHitsUpTo = trackTotalHitsUpTo;
         this.searchTimeProvider = Objects.requireNonNull(searchTimeProvider);
         this.aggReduceContextBuilder = aggReduceContextBuilder; // might be null if there are no aggregations
+        this.topDocsStats = new TopDocsStats(trackTotalHitsUpTo);
     }
 
     /**
-     * Add a search response to the list of responses to be merged together into one.
-     * Merges currently happen at once when all responses are available and {@link #getMergedResponse(Clusters)} )} is called.
-     * That may change in the future as it's possible to introduce incremental merges as responses come in if necessary.
+     * Adds a search response and incrementally merges its data into the accumulated state.
+     * The response is released after extraction, freeing memory immediately rather than
+     * waiting until {@link #getMergedResponse(Clusters)} is called.
+     * <p>
+     * This method is synchronized to handle concurrent additions from multiple cluster responses.
      */
-    public void add(SearchResponse searchResponse) {
+    public synchronized void add(SearchResponse searchResponse) {
         assert searchResponse.getScrollId() == null : "merging scroll results is not supported";
         searchResponse.mustIncRef();
-        searchResponses.add(searchResponse);
-    }
-
-    int numResponses() {
-        return searchResponses.size();
-    }
-
-    /**
-     * Returns the merged response of all SearchResponses received so far. Can be called at any point,
-     * including when only some clusters have finished, in order to get "incremental" partial results.
-     * @param clusters The Clusters object for the search to report on the status of each cluster
-     *                 involved in the cross-cluster search
-     * @return merged response
-     */
-    public SearchResponse getMergedResponse(Clusters clusters) {
-        // if the search is only across remote clusters, none of them are available, and all of them have skip_unavailable set to true,
-        // we end up calling merge without anything to merge, we just return an empty search response
-        if (searchResponses.size() == 0) {
-            return SearchResponse.empty(searchTimeProvider::buildTookInMillis, clusters);
-        }
-        int totalShards = 0;
-        int skippedShards = 0;
-        int successfulShards = 0;
-        // the current reduce phase counts as one
-        int numReducePhases = 1;
-        List<ShardSearchFailure> failures = new ArrayList<>();
-        Map<String, SearchProfileShardResult> profileResults = new HashMap<>();
-        List<InternalAggregations> aggs = new ArrayList<>();
-        Map<ShardIdAndClusterAlias, Integer> shards = new TreeMap<>();
-        List<TopDocs> topDocsList = new ArrayList<>(searchResponses.size());
-        Map<String, List<Suggest.Suggestion<?>>> groupedSuggestions = new HashMap<>();
-        Boolean trackTotalHits = null;
-
-        TopDocsStats topDocsStats = new TopDocsStats(trackTotalHitsUpTo);
-
-        for (SearchResponse searchResponse : searchResponses) {
+        try {
             totalShards += searchResponse.getTotalShards();
             skippedShards += searchResponse.getSkippedShards();
             successfulShards += searchResponse.getSuccessfulShards();
@@ -169,6 +153,9 @@ public final class SearchResponseMerger implements Releasable {
                             SearchShardTarget shard = option.getHit().getShard();
                             ShardIdAndClusterAlias shardId = new ShardIdAndClusterAlias(shard.getShardId(), shard.getClusterAlias());
                             shards.putIfAbsent(shardId, null);
+                            // IncRef the completion suggestion hit so it survives after SearchResponse release
+                            option.getHit().incRef();
+                            hitsToRelease.add(option.getHit());
                         }
                     }
                 }
@@ -195,11 +182,43 @@ public final class SearchResponseMerger implements Releasable {
                 searchResponse.isTerminatedEarly()
             );
             if (searchHits.getHits().length > 0) {
+                // IncRef each SearchHit before releasing the SearchResponse so hits survive
+                for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                    FieldDocAndSearchHit fieldDocAndSearchHit = (FieldDocAndSearchHit) scoreDoc;
+                    fieldDocAndSearchHit.searchHit.incRef();
+                    hitsToRelease.add(fieldDocAndSearchHit.searchHit);
+                }
                 // there is no point in adding empty search hits and merging them with the others. Also, empty search hits always come
                 // without sort fields and collapse info, despite sort by field and/or field collapsing was requested, which causes
                 // issues reconstructing the proper TopDocs instance and breaks mergeTopDocs which expects the same type for each result.
                 topDocsList.add(topDocs);
             }
+            responseCount++;
+        } finally {
+            // Release the SearchResponse immediately - we've extracted and ref'd everything we need
+            searchResponse.decRef();
+        }
+    }
+
+    int numResponses() {
+        return responseCount;
+    }
+
+    /**
+     * Returns the merged response of all SearchResponses received so far. Can be called at any point,
+     * including when only some clusters have finished, in order to get "incremental" partial results.
+     * <p>
+     * This method uses the state accumulated by prior {@link #add(SearchResponse)} calls.
+     *
+     * @param clusters The Clusters object for the search to report on the status of each cluster
+     *                 involved in the cross-cluster search
+     * @return merged response
+     */
+    public synchronized SearchResponse getMergedResponse(Clusters clusters) {
+        // if the search is only across remote clusters, none of them are available, and all of them have skip_unavailable set to true,
+        // we end up calling merge without anything to merge, we just return an empty search response
+        if (responseCount == 0) {
+            return SearchResponse.empty(searchTimeProvider::buildTookInMillis, clusters);
         }
 
         // after going through all the hits and collecting all their distinct shards, we assign shardIndex and set it to the ScoreDocs
@@ -218,6 +237,8 @@ public final class SearchResponseMerger implements Releasable {
             // make failures ordering consistent between ordinary search and CCS by looking at the shard they come from
             Arrays.sort(shardFailures, FAILURES_COMPARATOR);
             long tookInMillis = searchTimeProvider.buildTookInMillis();
+            // the current reduce phase counts as one
+            int finalNumReducePhases = 1 + numReducePhases;
             return new SearchResponse(
                 mergedSearchHits,
                 reducedAggs,
@@ -225,7 +246,7 @@ public final class SearchResponseMerger implements Releasable {
                 topDocsStats.timedOut,
                 topDocsStats.terminatedEarly,
                 profileShardResults,
-                numReducePhases,
+                finalNumReducePhases,
                 null,
                 totalShards,
                 successfulShards,
