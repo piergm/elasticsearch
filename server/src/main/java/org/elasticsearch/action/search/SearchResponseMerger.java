@@ -90,10 +90,15 @@ public final class SearchResponseMerger implements Releasable {
 
     // SearchHits that we've incRef'd and need to release on close
     private final List<SearchHit> hitsToRelease = new ArrayList<>();
+    private final List<SearchHits> topHitsAggsToRelease = new ArrayList<>();
 
     private final Releasable releasable = LeakTracker.wrap(() -> {
         for (SearchHit hit : hitsToRelease) {
             hit.decRef();
+        }
+
+        for (SearchHits searchHits : topHitsAggsToRelease) {
+            searchHits.decRef();
         }
     });
 
@@ -135,6 +140,7 @@ public final class SearchResponseMerger implements Releasable {
             if (searchResponse.hasAggregations()) {
                 InternalAggregations internalAggs = searchResponse.getAggregations();
                 aggs.add(internalAggs);
+                InternalAggregations.addTopHitsToReleaseList(internalAggs, topHitsAggsToRelease, true);
             }
 
             Suggest suggest = searchResponse.getSuggest();
