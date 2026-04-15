@@ -1522,6 +1522,7 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
                             return current;
                         });
                     }
+                    return;
                 }
                 progressListener.notifyClusterResponseMinimizeRoundtrips(clusterAlias, searchResponse);
             }
