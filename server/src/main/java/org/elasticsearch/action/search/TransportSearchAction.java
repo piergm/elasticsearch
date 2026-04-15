@@ -1508,7 +1508,21 @@ public class TransportSearchAction extends HandledTransportAction<SearchRequest,
             @Override
             void innerOnResponse(SearchResponse searchResponse) {
                 ccsClusterInfoUpdate(searchResponse, clusters, clusterAlias, shouldSkipOnFailure);
-                searchResponseMerger.add(searchResponse);
+                try {
+                    searchResponseMerger.add(searchResponse);
+                } catch (Exception e) {
+                    /*
+                     * If there's an error in eagerly reducing the search responses as they come in,
+                     * track the error. When creating a final search response, we'd be checking it
+                     * to decide if a final response is to be sent or not.
+                     */
+                    if (exceptions.compareAndSet(null, e) == false) {
+                        exceptions.accumulateAndGet(e, (previous, current) -> {
+                            current.addSuppressed(previous);
+                            return current;
+                        });
+                    }
+                }
                 progressListener.notifyClusterResponseMinimizeRoundtrips(clusterAlias, searchResponse);
             }
 
